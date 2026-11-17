@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     debug: bool = True
     database_url: str = "sqlite:///./helpdesk.db"
 
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_timeout_seconds: int = 30
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

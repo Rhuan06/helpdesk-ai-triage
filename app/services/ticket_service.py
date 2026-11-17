@@ -1,14 +1,67 @@
+import logging
+
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.ticket import Ticket, TicketCategory, TicketPriority, TicketStatus
-from app.schemas.ticket import TicketCreate, TicketUpdate
+from app.schemas.ticket import TicketAIAnalysis, TicketCreate, TicketUpdate
+from app.services.ai_classifier import AIClassifierError, analyze_ticket_content
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_ai_analysis(ticket: Ticket, analysis: TicketAIAnalysis) -> None:
+    """Atribui exclusivamente os campos de sugestão da IA ao modelo ORM."""
+    ticket.ai_suggested_category = analysis.suggested_category
+    ticket.ai_suggested_priority = analysis.suggested_priority
+    ticket.ai_technical_summary = analysis.technical_summary
+    ticket.ai_possible_causes = analysis.possible_causes
+    ticket.ai_suggested_resolution = analysis.suggested_resolution
 
 
 def create_ticket(db: Session, ticket_data: TicketCreate) -> Ticket:
-    """Cria e persiste um novo chamado no banco de dados."""
+    """Persiste o chamado primeiro e executa triagem por IA de forma não bloqueante."""
     ticket = Ticket(**ticket_data.model_dump())
     db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+
+    try:
+        analysis = analyze_ticket_content(
+            title=ticket.title,
+            description=ticket.description,
+        )
+    except AIClassifierError as exc:
+        logger.warning(
+            "Chamado #%s criado sem triagem de IA (%s).",
+            ticket.id,
+            type(exc).__name__,
+        )
+        return ticket
+
+    try:
+        _apply_ai_analysis(ticket, analysis)
+        db.commit()
+        db.refresh(ticket)
+    except SQLAlchemyError:
+        db.rollback()
+        logger.error(
+            "Falha ao persistir resultados da IA no chamado #%s; chamado mantido sem análise.",
+            ticket.id,
+        )
+        db.refresh(ticket)
+
+    return ticket
+
+
+def reanalyze_ticket(db: Session, ticket: Ticket) -> Ticket:
+    """Reprocessa a triagem de IA de um chamado existente preservando dados anteriores em caso de erro."""
+    analysis = analyze_ticket_content(
+        title=ticket.title,
+        description=ticket.description,
+    )
+    _apply_ai_analysis(ticket, analysis)
     db.commit()
     db.refresh(ticket)
     return ticket

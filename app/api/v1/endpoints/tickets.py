@@ -5,6 +5,11 @@ from app.db.session import get_db
 from app.models.ticket import TicketCategory, TicketPriority, TicketStatus
 from app.schemas.ticket import TicketCreate, TicketResponse, TicketUpdate
 from app.services import ticket_service
+from app.services.ai_classifier import (
+    AIClassifierError,
+    AIConfigurationError,
+    AITimeoutError,
+)
 
 router = APIRouter()
 
@@ -13,15 +18,54 @@ router = APIRouter()
     "",
     response_model=TicketResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Criar chamado",
+    summary="Criar chamado com triagem inteligente",
 )
 def create_ticket(
     ticket_in: TicketCreate,
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    """Cria um novo chamado técnico sem executar triagem de IA."""
+    """Cria um chamado e executa triagem automática pelo Gemini de forma não bloqueante."""
     ticket = ticket_service.create_ticket(db=db, ticket_data=ticket_in)
     return TicketResponse.model_validate(ticket)
+
+
+@router.post(
+    "/{ticket_id}/analyze",
+    response_model=TicketResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reprocessar triagem de IA do chamado",
+)
+def analyze_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    """Executa sob demanda uma nova análise de IA para um chamado existente."""
+    ticket = ticket_service.get_ticket_by_id(db=db, ticket_id=ticket_id)
+    if ticket is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Chamado com ID {ticket_id} não encontrado.",
+        )
+
+    try:
+        analyzed_ticket = ticket_service.reanalyze_ticket(db=db, ticket=ticket)
+    except AIConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except AITimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=str(exc),
+        ) from exc
+    except AIClassifierError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return TicketResponse.model_validate(analyzed_ticket)
 
 
 @router.get(
