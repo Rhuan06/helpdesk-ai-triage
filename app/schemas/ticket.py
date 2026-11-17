@@ -1,25 +1,44 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.ticket import TicketCategory, TicketPriority, TicketStatus
 
+
 class TicketCreate(BaseModel):
-    title: str = Field(..., min_lenght=3, max_lenght=150)
-    description: str = Field(..., min_lenght=10)
-    requester_name: str = Field(..., min_lenght=2, max_lenght=100)
+    title: str = Field(..., min_length=3, max_length=150)
+    description: str = Field(..., min_length=10, max_length=5000)
+    requester_name: str = Field(..., min_length=2, max_length=100)
     category: TicketCategory = TicketCategory.OTHER
     priority: TicketPriority = TicketPriority.MEDIUM
 
+    @field_validator("title", "description", "requester_name", mode="before")
+    @classmethod
+    def strip_whitespace(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
 class TicketUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=150)
-    description: str | None = Field(default=None, min_length=10)
+    description: str | None = Field(default=None, min_length=10, max_length=5000)
     requester_name: str | None = Field(default=None, min_length=2, max_length=100)
     category: TicketCategory | None = None
     priority: TicketPriority | None = None
     status: TicketStatus | None = None
 
+    @field_validator("title", "description", "requester_name", mode="before")
+    @classmethod
+    def strip_whitespace(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
 class TicketResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     title: str
     description: str
@@ -27,16 +46,14 @@ class TicketResponse(BaseModel):
     category: TicketCategory
     priority: TicketPriority
     status: TicketStatus
+    ai_suggested_category: TicketCategory | None
+    ai_suggested_priority: TicketPriority | None
+    ai_technical_summary: str | None
+    ai_possible_causes: list[str] | None
+    ai_suggested_resolution: list[str] | None
     created_at: datetime
     updated_at: datetime
 
-    ai_suggested_category: TicketCategory | None = None
-    ai_suggested_priority: TicketPriority | None = None
-    ai_technical_summary: str | None = None
-    ai_possible_causes: list[str] | None = None
-    ai_suggested_resolution: list[str] | None = None
-
-    model_config = ConfigDict(from_attributes=True)
 
 class TicketAIAnalysis(BaseModel):
     suggested_category: TicketCategory = Field(
@@ -54,8 +71,8 @@ class TicketAIAnalysis(BaseModel):
     )
     possible_causes: list[str] = Field(
         ...,
-        min_length=2,
-        max_length=4,
+        min_length=1,
+        max_length=5,
         description="Lista de 2 a 4 possíveis causas técnicas para o problema.",
     )
     suggested_resolution: list[str] = Field(

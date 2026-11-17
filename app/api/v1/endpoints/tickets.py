@@ -10,6 +10,7 @@ from app.services.ai_classifier import (
     AIConfigurationError,
     AITimeoutError,
 )
+from app.services.ticket_service import BusinessRuleError
 
 router = APIRouter()
 
@@ -39,7 +40,7 @@ def analyze_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    """Executa sob demanda uma nova análise de IA para um chamado existente."""
+    """Executa sob demanda uma nova análise de IA para um chamado ativo."""
     ticket = ticket_service.get_ticket_by_id(db=db, ticket_id=ticket_id)
     if ticket is None:
         raise HTTPException(
@@ -49,6 +50,11 @@ def analyze_ticket(
 
     try:
         analyzed_ticket = ticket_service.reanalyze_ticket(db=db, ticket=ticket)
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except AIConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -125,7 +131,7 @@ def update_ticket(
     ticket_in: TicketUpdate,
     db: Session = Depends(get_db),
 ) -> TicketResponse:
-    """Atualiza apenas os campos informados no corpo da requisição."""
+    """Atualiza apenas os campos informados respeitando regras de negócio e transições de status."""
     ticket = ticket_service.get_ticket_by_id(db=db, ticket_id=ticket_id)
     if ticket is None:
         raise HTTPException(
@@ -139,6 +145,11 @@ def update_ticket(
             ticket=ticket,
             ticket_data=ticket_in,
         )
+    except BusinessRuleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
