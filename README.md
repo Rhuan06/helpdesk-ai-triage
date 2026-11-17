@@ -80,7 +80,7 @@ A resposta do modelo também é restringida por meio de **Structured Outputs**, 
 
 O ciclo de vida dos chamados é controlado por transições explícitas.
 
-A aplicação impede alterações cadastrais e novas análises de IA quando um chamado está encerrado (`closed`).
+A aplicação impede alterações cadastrais e novas análises de IA quando um chamado está encerrado (`closed`), retornando 409 Conflict nas operações de atualização (`PATCH`) e solicitação de nova análise (`POST /analyze`).
 
 ---
 
@@ -271,7 +271,7 @@ Observe que a categoria e a prioridade oficiais permanecem com seus valores padr
 ### 1. Clonar o repositório
 
 ```bash
-git clone <url-do-repositorio>
+git clone https://github.com/Rhuan06/helpdesk-ai-triage.git
 cd helpdesk-ai-triage
 ```
 
